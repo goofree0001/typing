@@ -3,8 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>グラフ記録付きタイピングゲーム</title>
-    <!-- 📊 グラフを描くためのライブラリを読み込みます -->
-    <script src="https://jsdelivr.net"></script>
     <style>
         body { text-align: center; font-family: Arial, sans-serif; padding-top: 30px; background-color: #f0f0f0; }
         #file-area { background-color: #fff; border: 2px dashed #ccc; padding: 20px; max-width: 400px; margin: 0 auto 20px auto; border-radius: 8px; }
@@ -17,8 +15,6 @@
         #start-btn { background-color: #4CAF50; display: none; }
         #reset-btn { background-color: #f44336; }
         .miss-flash { background-color: #ffcccc !important; }
-        
-        /* 📈 グラフを表示するエリアのサイズ制限 */
         #chart-container { max-width: 600px; margin: 30px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     </style>
 </head>
@@ -41,39 +37,52 @@
     <div id="word-display"></div>
     <div id="message"></div>
 
-    <!-- 📈 グラフを表示するキャンバス -->
     <div id="chart-container">
         <canvas id="scoreChart"></canvas>
-        <button id="reset-btn" onclick="resetLog()">データを初期化する</button>
+        <button id="reset-btn">データを初期化する</button>
     </div>
+
+    <script src="chart.js"></script>
 
     <script>
         let words = []; 
         let currentQuestion = null; let currentWord = ''; let charIndex = 0; let isPlaying = false;
         let totalCorrectTypes = 0; let totalMissTypes = 0; let timeLeft = 30; let timerInterval = null;
-        let myChart = null; // グラフのオブジェクト
+        let myChart = null; 
 
         const fileInput = document.getElementById('file-input'); const fileArea = document.getElementById('file-area');
         const startBtn = document.getElementById('start-btn'); const statusContainer = document.getElementById('status-container');
         const japaneseDisplay = document.getElementById('japanese-display'); const wordDisplay = document.getElementById('word-display');
         const messageDisplay = document.getElementById('message'); const gameBody = document.getElementById('game-body'); const timerDisplay = document.getElementById('timer');
 
-        // 音の関数
         function playTone(frequency, type, duration) {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioCtx.createOscillator(); const gainNode = audioCtx.createGain();
-            oscillator.type = type; oscillator.frequency.value = frequency;
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
-            oscillator.start(); oscillator.stop(audioCtx.currentTime + duration);
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const oscillator = audioCtx.createOscillator(); const gainNode = audioCtx.createGain();
+                oscillator.type = type; oscillator.frequency.value = frequency;
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
+                oscillator.start(); oscillator.stop(audioCtx.currentTime + duration);
+            } catch (error) {
+                console.warn("オーディオエラーを回避しました:", error);
+            }
         }
+        
         function playTypeSound() { playTone(800, 'sine', 0.05); }
         function playClearSound() { playTone(523.25, 'sine', 0.1); setTimeout(() => { playTone(659.25, 'sine', 0.15); }, 100); }
         function playMissSound() { playTone(150, 'sawtooth', 0.15); }
         function playTimeUpSound() { playTone(523.25, 'sine', 0.1); setTimeout(() => playTone(659.25, 'sine', 0.1), 100); setTimeout(() => playTone(783.99, 'sine', 0.1), 200); setTimeout(() => playTone(1046.50, 'sine', 0.3), 300); }
 
         fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0]; if (!file) return;
+            // 💡 【重要修正】ファイルが1つも選ばれていない、またはキャンセルされたらここで終了する
+            if (!e.target.files || e.target.files.length === 0) return;
+            
+            // 💡 【重要修正】正しく1番目のファイルオブジェクトを取得する
+            const file = e.target.files[0]; 
+            
             const reader = new FileReader();
             reader.onload = function(event) {
                 const text = event.target.result; const lines = text.replace(/\r\n/g, '\n').split('\n');
@@ -104,7 +113,6 @@
             }, 1000);
         }
 
-        // 🏁 ゲーム終了
         function endGame() {
             isPlaying = false; clearInterval(timerInterval);
             wordDisplay.style.display = 'none'; japaneseDisplay.textContent = '';
@@ -117,47 +125,31 @@
             messageDisplay.innerHTML = `<strong>【タイムアップ！】結果をブラウザに記録しました</strong><br>速度: <strong>${wpm}</strong> WPM / 正確さ: ${accuracy} %`;
             startBtn.textContent = 'もう一度遊ぶ'; startBtn.style.display = 'inline-block';
 
-            // 💡 データの保存とグラフ更新を実行
             saveLog(wpm);
         }
 
-        // 💾 データをLocalStorageに保存する関数
         function saveLog(wpm) {
-            // 現在の時刻 (時:分:秒)
             const now = new Date();
             const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-            // 過去のデータを読み込む（無ければ空っぽのリスト）
             let history = JSON.parse(localStorage.getItem('typing_history')) || [];
-            
-            // 新しいデータを追加
             history.push({ time: timeStr, wpm: wpm });
-            
-            // データをブラウザに保存（容量の限界まで何万回でも保存可能）
             localStorage.setItem('typing_history', JSON.stringify(history));
-
-            // グラフをリフレッシュする
             updateChart();
         }
 
-        // 📈 グラフを描画・更新する関数
         function updateChart() {
+            if (typeof Chart === 'undefined') return;
+
             let history = JSON.parse(localStorage.getItem('typing_history')) || [];
-            
-            // グラフに使うデータに変換
-            const labels = history.map(item => item.time); // 横軸：時間
-            const dataValues = history.map(item => item.wpm); // 縦軸：WPMスコア
+            const labels = history.map(item => item.time); 
+            const dataValues = history.map(item => item.wpm); 
 
             const ctx = document.getElementById('scoreChart').getContext('2d');
 
-            // すでにグラフが存在する場合は一度消す（バグ防止）
-            if (myChart) {
-                myChart.destroy();
-            }
+            if (myChart) { myChart.destroy(); }
 
-            // 新しいグラフを描画する
             myChart = new Chart(ctx, {
-                type: 'line', // 折れ線グラフ
+                type: 'line', 
                 data: {
                     labels: labels,
                     datasets: [{
@@ -166,24 +158,26 @@
                         borderColor: '#008CBA',
                         backgroundColor: 'rgba(0, 140, 186, 0.1)',
                         borderWidth: 2,
-                        tension: 0.1 // 線の丸み
+                        tension: 0.1,
+                        lineTension: 0.1 
                     }]
                 },
                 options: {
+                    responsive: true,
                     scales: {
-                        y: { beginAtZero: true } // 縦軸を0からスタートさせる
+                        y: { beginAtZero: true, max: 200 },
+                        yAxes: [{ ticks: { beginAtZero: true, max: 200 } }] 
                     }
                 }
             });
         }
 
-        // 🗑️ データを消去する関数
-        function resetLog() {
+        document.getElementById('reset-btn').addEventListener('click', () => {
             if(confirm("今までの記録をすべて消去しますか？")) {
                 localStorage.removeItem('typing_history');
                 updateChart();
             }
-        }
+        });
 
         function setWord() {
             if (!isPlaying) return;
@@ -211,8 +205,7 @@
             }
         });
 
-        // 💡 ページを開いたときに最初から過去のグラフを出しておく
-        updateChart();
+        setTimeout(updateChart, 100);
     </script>
 </body>
 </html>
