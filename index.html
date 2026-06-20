@@ -11,16 +11,19 @@
         #word-display { font-size: 48px; letter-spacing: 2px; margin-bottom: 20px; display: none; }
         .correct { color: #ccc; }
         #message { font-size: 24px; color: #2c3e50; height: 120px; white-space: pre-wrap; line-height: 1.6; }
-        #start-btn, #reset-btn { font-size: 20px; padding: 10px 30px; cursor: pointer; color: white; border: none; border-radius: 5px; margin: 5px; }
+        
+        #start-btn, #reset-btn, #reload-btn { font-size: 20px; padding: 10px 30px; cursor: pointer; color: white; border: none; border-radius: 5px; margin: 5px; }
         #start-btn { background-color: #4CAF50; display: none; }
         #reset-btn { background-color: #f44336; }
+        #reload-btn { background-color: #008CBA; display: none; }
+        
         .miss-flash { background-color: #ffcccc !important; }
         #chart-container { max-width: 600px; margin: 30px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body id="game-body">
 
-    <h1>タイピングゲーム（成長グラフ付き）</h1>
+    <h1>タイピングゲーム（問題切り替え対応）</h1>
     
     <div id="file-area">
         <p style="margin-top:0;">問題ファイル（.txt）を選んでください</p>
@@ -32,6 +35,7 @@
     </div>
 
     <button id="start-btn">ゲームを始める</button>
+    <button id="reload-btn" onclick="changeFile()">別の問題ファイルを選ぶ</button>
 
     <div id="japanese-display"></div>
     <div id="word-display"></div>
@@ -39,28 +43,27 @@
 
     <div id="chart-container">
         <canvas id="scoreChart"></canvas>
-        <button id="reset-btn">データを初期化する</button>
+        <button id="reset-btn">グラフデータを初期化する</button>
     </div>
 
     <script src="chart.js"></script>
-
     <script>
         let words = []; 
         let currentQuestion = null; let currentWord = ''; let charIndex = 0; let isPlaying = false;
         let totalCorrectTypes = 0; let totalMissTypes = 0; let timeLeft = 30; let timerInterval = null;
         let myChart = null; 
+        let currentWordIndex = 0; 
 
         const fileInput = document.getElementById('file-input'); const fileArea = document.getElementById('file-area');
         const startBtn = document.getElementById('start-btn'); const statusContainer = document.getElementById('status-container');
         const japaneseDisplay = document.getElementById('japanese-display'); const wordDisplay = document.getElementById('word-display');
         const messageDisplay = document.getElementById('message'); const gameBody = document.getElementById('game-body'); const timerDisplay = document.getElementById('timer');
+        const reloadBtn = document.getElementById('reload-btn');
 
         function playTone(frequency, type, duration) {
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
+                if (audioCtx.state === 'suspended') { audioCtx.resume(); }
                 const oscillator = audioCtx.createOscillator(); const gainNode = audioCtx.createGain();
                 oscillator.type = type; oscillator.frequency.value = frequency;
                 gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
@@ -77,10 +80,10 @@
         function playTimeUpSound() { playTone(523.25, 'sine', 0.1); setTimeout(() => playTone(659.25, 'sine', 0.1), 100); setTimeout(() => playTone(783.99, 'sine', 0.1), 200); setTimeout(() => playTone(1046.50, 'sine', 0.3), 300); }
 
         fileInput.addEventListener('change', (e) => {
-            // 💡 【重要修正】ファイルが1つも選ばれていない、またはキャンセルされたらここで終了する
+            // 💡 【重要修正】ファイルが1つも選択されていない場合は、何もせず安全に終了する
             if (!e.target.files || e.target.files.length === 0) return;
             
-            // 💡 【重要修正】正しく1番目のファイルオブジェクトを取得する
+            // 💡 【重要修正】末尾に [0] をつけて、1番目のファイルオブジェクトだけを確実に取り出す
             const file = e.target.files[0]; 
             
             const reader = new FileReader();
@@ -94,14 +97,17 @@
                 if (words.length > 0) {
                     messageDisplay.style.color = 'green'; messageDisplay.textContent = `問題を ${words.length} 問読み込みました！`;
                     fileArea.style.display = 'none'; startBtn.style.display = 'inline-block'; 
+                    reloadBtn.style.display = 'none'; 
                 }
             };
-            reader.readAsText(file);
+            reader.readAsText(file); // 💡 これでエラーが出なくなります
         });
 
         startBtn.addEventListener('click', () => {
             isPlaying = true; timeLeft = 30; totalCorrectTypes = 0; totalMissTypes = 0;
-            startBtn.style.display = 'none'; statusContainer.style.display = 'block'; wordDisplay.style.display = 'block';
+            currentWordIndex = 0; 
+            startBtn.style.display = 'none'; reloadBtn.style.display = 'none'; 
+            statusContainer.style.display = 'block'; wordDisplay.style.display = 'block';
             timerDisplay.textContent = timeLeft; messageDisplay.textContent = '';
             playTone(440, 'sine', 0.01); setWord(); startTimer();
         });
@@ -123,9 +129,19 @@
             const accuracy = totalKeys > 0 ? Math.round((totalCorrectTypes / totalKeys) * 100) : 0;
 
             messageDisplay.innerHTML = `<strong>【タイムアップ！】結果をブラウザに記録しました</strong><br>速度: <strong>${wpm}</strong> WPM / 正確さ: ${accuracy} %`;
-            startBtn.textContent = 'もう一度遊ぶ'; startBtn.style.display = 'inline-block';
+            startBtn.textContent = 'もう一度遊ぶ'; 
+            startBtn.style.display = 'inline-block';
+            reloadBtn.style.display = 'inline-block'; 
 
             saveLog(wpm);
+        }
+
+        function changeFile() {
+            fileInput.value = ''; 
+            fileArea.style.display = 'block'; 
+            startBtn.style.display = 'none'; 
+            reloadBtn.style.display = 'none'; 
+            messageDisplay.textContent = ''; 
         }
 
         function saveLog(wpm) {
@@ -173,7 +189,7 @@
         }
 
         document.getElementById('reset-btn').addEventListener('click', () => {
-            if(confirm("今までの記録をすべて消去しますか？")) {
+            if(confirm("今までのグラフ記録をすべて消去しますか？")) {
                 localStorage.removeItem('typing_history');
                 updateChart();
             }
@@ -181,9 +197,17 @@
 
         function setWord() {
             if (!isPlaying) return;
-            currentQuestion = words[Math.floor(Math.random() * words.length)];
-            japaneseDisplay.textContent = currentQuestion.japanese; currentWord = currentQuestion.english; charIndex = 0;
+            
+            currentQuestion = words[currentWordIndex];
+            japaneseDisplay.textContent = currentQuestion.japanese; 
+            currentWord = currentQuestion.english; 
+            charIndex = 0;
             updateDisplay();
+
+            currentWordIndex++;
+            if (currentWordIndex >= words.length) {
+                currentWordIndex = 0; 
+            }
         }
 
         function updateDisplay() {
