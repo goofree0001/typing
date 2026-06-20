@@ -2,7 +2,9 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>サーバー連動タイピングゲーム</title>
+    <title>グラフ記録付きタイピングゲーム</title>
+    <!-- 📊 グラフを描くためのライブラリを読み込みます -->
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { text-align: center; font-family: Arial, sans-serif; padding-top: 30px; background-color: #f0f0f0; }
         #file-area { background-color: #fff; border: 2px dashed #ccc; padding: 20px; max-width: 400px; margin: 0 auto 20px auto; border-radius: 8px; }
@@ -10,14 +12,19 @@
         #japanese-display { font-size: 28px; color: #555; margin-bottom: 10px; }
         #word-display { font-size: 48px; letter-spacing: 2px; margin-bottom: 20px; display: none; }
         .correct { color: #ccc; }
-        #message { font-size: 24px; color: #2c3e50; height: 180px; white-space: pre-wrap; line-height: 1.6; }
-        #start-btn { font-size: 24px; padding: 10px 30px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 5px; display: none; }
+        #message { font-size: 24px; color: #2c3e50; height: 120px; white-space: pre-wrap; line-height: 1.6; }
+        #start-btn, #reset-btn { font-size: 20px; padding: 10px 30px; cursor: pointer; color: white; border: none; border-radius: 5px; margin: 5px; }
+        #start-btn { background-color: #4CAF50; display: none; }
+        #reset-btn { background-color: #f44336; }
         .miss-flash { background-color: #ffcccc !important; }
+        
+        /* 📈 グラフを表示するエリアのサイズ制限 */
+        #chart-container { max-width: 600px; margin: 30px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body id="game-body">
 
-    <h1>タイピングゲーム（サーバー保存版）</h1>
+    <h1>タイピングゲーム（成長グラフ付き）</h1>
     
     <div id="file-area">
         <p style="margin-top:0;">問題ファイル（.txt）を選んでください</p>
@@ -34,34 +41,29 @@
     <div id="word-display"></div>
     <div id="message"></div>
 
+    <!-- 📈 グラフを表示するキャンバス -->
+    <div id="chart-container">
+        <canvas id="scoreChart"></canvas>
+        <button id="reset-btn" onclick="resetLog()">データを初期化する</button>
+    </div>
+
     <script>
         let words = []; 
-        let currentQuestion = null;
-        let currentWord = ''; 
-        let charIndex = 0;
-        let isPlaying = false;
-        let totalCorrectTypes = 0;
-        let totalMissTypes = 0;
-        let timeLeft = 30;
-        let timerInterval = null;
+        let currentQuestion = null; let currentWord = ''; let charIndex = 0; let isPlaying = false;
+        let totalCorrectTypes = 0; let totalMissTypes = 0; let timeLeft = 30; let timerInterval = null;
+        let myChart = null; // グラフのオブジェクト
 
-        const fileInput = document.getElementById('file-input');
-        const fileArea = document.getElementById('file-area');
-        const startBtn = document.getElementById('start-btn');
-        const statusContainer = document.getElementById('status-container');
-        const japaneseDisplay = document.getElementById('japanese-display');
-        const wordDisplay = document.getElementById('word-display');
-        const messageDisplay = document.getElementById('message');
-        const gameBody = document.getElementById('game-body');
-        const timerDisplay = document.getElementById('timer');
+        const fileInput = document.getElementById('file-input'); const fileArea = document.getElementById('file-area');
+        const startBtn = document.getElementById('start-btn'); const statusContainer = document.getElementById('status-container');
+        const japaneseDisplay = document.getElementById('japanese-display'); const wordDisplay = document.getElementById('word-display');
+        const messageDisplay = document.getElementById('message'); const gameBody = document.getElementById('game-body'); const timerDisplay = document.getElementById('timer');
 
+        // 音の関数
         function playTone(frequency, type, duration) {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
+            const oscillator = audioCtx.createOscillator(); const gainNode = audioCtx.createGain();
             oscillator.type = type; oscillator.frequency.value = frequency;
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
             oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
             oscillator.start(); oscillator.stop(audioCtx.currentTime + duration);
         }
@@ -71,16 +73,13 @@
         function playTimeUpSound() { playTone(523.25, 'sine', 0.1); setTimeout(() => playTone(659.25, 'sine', 0.1), 100); setTimeout(() => playTone(783.99, 'sine', 0.1), 200); setTimeout(() => playTone(1046.50, 'sine', 0.3), 300); }
 
         fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+            const file = e.target.files[0]; if (!file) return;
             const reader = new FileReader();
             reader.onload = function(event) {
-                const text = event.target.result;
-                const lines = text.replace(/\r\n/g, '\n').split('\n');
+                const text = event.target.result; const lines = text.replace(/\r\n/g, '\n').split('\n');
                 words = []; 
                 for (let i = 0; i < lines.length; i += 3) {
-                    const ja = lines[i] ? lines[i].trim() : '';      
-                    const en = lines[i+1] ? lines[i+1].trim() : '';  
+                    const ja = lines[i]?.trim(); const en = lines[i+1]?.trim();  
                     if (ja && en) words.push({ japanese: ja, english: en });
                 }
                 if (words.length > 0) {
@@ -105,6 +104,7 @@
             }, 1000);
         }
 
+        // 🏁 ゲーム終了
         function endGame() {
             isPlaying = false; clearInterval(timerInterval);
             wordDisplay.style.display = 'none'; japaneseDisplay.textContent = '';
@@ -114,29 +114,75 @@
             const totalKeys = totalCorrectTypes + totalMissTypes;
             const accuracy = totalKeys > 0 ? Math.round((totalCorrectTypes / totalKeys) * 100) : 0;
 
-            messageDisplay.innerHTML = `<strong>【タイムアップ！】結果をサーバーに自動保存しました</strong><br>速度: <strong>${wpm}</strong> WPM / 正確さ: ${accuracy} %`;
+            messageDisplay.innerHTML = `<strong>【タイムアップ！】結果をブラウザに記録しました</strong><br>速度: <strong>${wpm}</strong> WPM / 正確さ: ${accuracy} %`;
             startBtn.textContent = 'もう一度遊ぶ'; startBtn.style.display = 'inline-block';
 
-            // 💡 サーバーへデータを自動で送信する（バックグラウンド通信）
-            sendResultToServer(wpm, totalCorrectTypes, totalMissTypes, accuracy);
+            // 💡 データの保存とグラフ更新を実行
+            saveLog(wpm);
         }
 
-        // 💡 サーバーへPOSTリクエストを送る関数
-        function sendResultToServer(wpm, correct, miss, accuracy) {
+        // 💾 データをLocalStorageに保存する関数
+        function saveLog(wpm) {
+            // 現在の時刻 (時:分:秒)
             const now = new Date();
-            const timeStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-            const resultData = { time: timeStr, wpm: wpm, correct: correct, miss: miss, accuracy: accuracy };
+            // 過去のデータを読み込む（無ければ空っぽのリスト）
+            let history = JSON.parse(localStorage.getItem('typing_history')) || [];
+            
+            // 新しいデータを追加
+            history.push({ time: timeStr, wpm: wpm });
+            
+            // データをブラウザに保存（容量の限界まで何万回でも保存可能）
+            localStorage.setItem('typing_history', JSON.stringify(history));
 
-            // サーバーの「/save-csv」宛てにデータを送る
-            fetch('/save-csv', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(resultData)
-            })
-            .then(response => response.json())
-            .then(data => console.log('保存完了:', data))
-            .catch(error => console.error('保存エラー:', error));
+            // グラフをリフレッシュする
+            updateChart();
+        }
+
+        // 📈 グラフを描画・更新する関数
+        function updateChart() {
+            let history = JSON.parse(localStorage.getItem('typing_history')) || [];
+            
+            // グラフに使うデータに変換
+            const labels = history.map(item => item.time); // 横軸：時間
+            const dataValues = history.map(item => item.wpm); // 縦軸：WPMスコア
+
+            const ctx = document.getElementById('scoreChart').getContext('2d');
+
+            // すでにグラフが存在する場合は一度消す（バグ防止）
+            if (myChart) {
+                myChart.destroy();
+            }
+
+            // 新しいグラフを描画する
+            myChart = new Chart(ctx, {
+                type: 'line', // 折れ線グラフ
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'タイピング速度 (WPM)',
+                        data: dataValues,
+                        borderColor: '#008CBA',
+                        backgroundColor: 'rgba(0, 140, 186, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.1 // 線の丸み
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: { beginAtZero: true } // 縦軸を0からスタートさせる
+                    }
+                }
+            });
+        }
+
+        // 🗑️ データを消去する関数
+        function resetLog() {
+            if(confirm("今までの記録をすべて消去しますか？")) {
+                localStorage.removeItem('typing_history');
+                updateChart();
+            }
         }
 
         function setWord() {
@@ -164,6 +210,9 @@
                 gameBody.classList.add('miss-flash'); setTimeout(() => { gameBody.classList.remove('miss-flash'); }, 100);
             }
         });
+
+        // 💡 ページを開いたときに最初から過去のグラフを出しておく
+        updateChart();
     </script>
 </body>
 </html>
