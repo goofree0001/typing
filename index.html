@@ -2,72 +2,23 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>問題ファイル読み込み式タイピング</title>
+    <title>サーバー連動タイピングゲーム</title>
     <style>
-        body {
-            text-align: center;
-            font-family: Arial, sans-serif;
-            padding-top: 30px;
-            background-color: #f0f0f0;
-        }
-        /* ファイル選択エリアのスタイル */
-        #file-area {
-            background-color: #fff;
-            border: 2px dashed #ccc;
-            padding: 20px;
-            max-width: 400px;
-            margin: 0 auto 20px auto;
-            border-radius: 8px;
-        }
-        #status-container {
-            font-size: 20px;
-            margin-bottom: 20px;
-            color: #333;
-            display: none; /* 最初は隠す */
-        }
-        /* 日本語（表示文字）を出す場所 */
-        #japanese-display {
-            font-size: 28px;
-            color: #555;
-            margin-bottom: 10px;
-        }
-        /* アルファベット（入力文字）を出す場所 */
-        #word-display {
-            font-size: 48px;
-            letter-spacing: 2px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        .correct {
-            color: #ccc;
-        }
-        #message {
-            font-size: 24px;
-            color: #2c3e50;
-            height: 150px;
-            white-space: pre-wrap;
-            line-height: 1.6;
-        }
-        #start-btn {
-            font-size: 24px;
-            padding: 10px 30px;
-            cursor: pointer;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            display: none; /* ファイルが選ばれるまで隠す */
-        }
-        .miss-flash {
-            background-color: #ffcccc !important;
-        }
+        body { text-align: center; font-family: Arial, sans-serif; padding-top: 30px; background-color: #f0f0f0; }
+        #file-area { background-color: #fff; border: 2px dashed #ccc; padding: 20px; max-width: 400px; margin: 0 auto 20px auto; border-radius: 8px; }
+        #status-container { font-size: 20px; margin-bottom: 20px; color: #333; display: none; }
+        #japanese-display { font-size: 28px; color: #555; margin-bottom: 10px; }
+        #word-display { font-size: 48px; letter-spacing: 2px; margin-bottom: 20px; display: none; }
+        .correct { color: #ccc; }
+        #message { font-size: 24px; color: #2c3e50; height: 180px; white-space: pre-wrap; line-height: 1.6; }
+        #start-btn { font-size: 24px; padding: 10px 30px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 5px; display: none; }
+        .miss-flash { background-color: #ffcccc !important; }
     </style>
 </head>
 <body id="game-body">
 
-    <h1>タイピングゲーム（問題読み込み対応）</h1>
+    <h1>タイピングゲーム（サーバー保存版）</h1>
     
-    <!-- 📂 ファイルを選択する場所 -->
     <div id="file-area">
         <p style="margin-top:0;">問題ファイル（.txt）を選んでください</p>
         <input type="file" id="file-input" accept=".txt">
@@ -79,20 +30,16 @@
 
     <button id="start-btn">ゲームを始める</button>
 
-    <!-- 💡 日本語とアルファベットを分けて表示します -->
     <div id="japanese-display"></div>
     <div id="word-display"></div>
     <div id="message"></div>
 
     <script>
-        // 読み込んだ問題を保存する配列
         let words = []; 
-        
         let currentQuestion = null;
-        let currentWord = ''; // 入力するアルファベット
+        let currentWord = ''; 
         let charIndex = 0;
         let isPlaying = false;
-
         let totalCorrectTypes = 0;
         let totalMissTypes = 0;
         let timeLeft = 30;
@@ -108,166 +55,113 @@
         const gameBody = document.getElementById('game-body');
         const timerDisplay = document.getElementById('timer');
 
-        // 🎵 電子音関数
         function playTone(frequency, type, duration) {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
-            oscillator.type = type;
-            oscillator.frequency.value = frequency;
+            oscillator.type = type; oscillator.frequency.value = frequency;
             gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + duration);
+            oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
+            oscillator.start(); oscillator.stop(audioCtx.currentTime + duration);
         }
         function playTypeSound() { playTone(800, 'sine', 0.05); }
-        function playClearSound() {
-            playTone(523.25, 'sine', 0.1);
-            setTimeout(() => { playTone(659.25, 'sine', 0.15); }, 100);
-        }
+        function playClearSound() { playTone(523.25, 'sine', 0.1); setTimeout(() => { playTone(659.25, 'sine', 0.15); }, 100); }
         function playMissSound() { playTone(150, 'sawtooth', 0.15); }
-        function playTimeUpSound() {
-            playTone(523.25, 'sine', 0.1);
-            setTimeout(() => playTone(659.25, 'sine', 0.1), 100);
-            setTimeout(() => playTone(783.99, 'sine', 0.1), 200);
-            setTimeout(() => playTone(1046.50, 'sine', 0.3), 300);
-        }
+        function playTimeUpSound() { playTone(523.25, 'sine', 0.1); setTimeout(() => playTone(659.25, 'sine', 0.1), 100); setTimeout(() => playTone(783.99, 'sine', 0.1), 200); setTimeout(() => playTone(1046.50, 'sine', 0.3), 300); }
 
-        // 📂 ファイルが選択されたときの処理
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = function(event) {
                 const text = event.target.result;
-                
-                // 💡 ファイルのテキストを行ごとに分解する（改行コードを統一してカット）
                 const lines = text.replace(/\r\n/g, '\n').split('\n');
-                
-                words = []; // リストを初期化
-                
-                // 指定されたフォーマット（3行ずつのセット）で解析
+                words = []; 
                 for (let i = 0; i < lines.length; i += 3) {
-                    const ja = lines[i] ? lines[i].trim() : '';      // 1行目: 表示文字
-                    const en = lines[i+1] ? lines[i+1].trim() : '';  // 2行目: 入力文字
-                    
-                    // 両方に文字が入っていれば問題として登録
-                    if (ja && en) {
-                        words.push({ japanese: ja, english: en });
-                    }
+                    const ja = lines[i] ? lines[i].trim() : '';      
+                    const en = lines[i+1] ? lines[i+1].trim() : '';  
+                    if (ja && en) words.push({ japanese: ja, english: en });
                 }
-
                 if (words.length > 0) {
-                    messageDisplay.style.color = 'green';
-                    messageDisplay.textContent = `問題を ${words.length} 問読み込みました！`;
-                    fileArea.style.display = 'none'; // ファイル選択を隠す
-                    startBtn.style.display = 'inline-block'; // スタートボタンを出す
-                } else {
-                    messageDisplay.style.color = 'red';
-                    messageDisplay.textContent = '問題の読み込みに失敗しました。フォーマットを確認してください。';
+                    messageDisplay.style.color = 'green'; messageDisplay.textContent = `問題を ${words.length} 問読み込みました！`;
+                    fileArea.style.display = 'none'; startBtn.style.display = 'inline-block'; 
                 }
             };
             reader.readAsText(file);
         });
 
-        // スタートボタンが押されたとき
         startBtn.addEventListener('click', () => {
-            isPlaying = true;
-            timeLeft = 30;
-            totalCorrectTypes = 0;
-            totalMissTypes = 0;
-            
-            startBtn.style.display = 'none';
-            statusContainer.style.display = 'block';
-            wordDisplay.style.display = 'block';
-            timerDisplay.textContent = timeLeft;
-            messageDisplay.textContent = '';
-            
-            playTone(440, 'sine', 0.01);
-            setWord();
-            startTimer();
+            isPlaying = true; timeLeft = 30; totalCorrectTypes = 0; totalMissTypes = 0;
+            startBtn.style.display = 'none'; statusContainer.style.display = 'block'; wordDisplay.style.display = 'block';
+            timerDisplay.textContent = timeLeft; messageDisplay.textContent = '';
+            playTone(440, 'sine', 0.01); setWord(); startTimer();
         });
 
         function startTimer() {
             timerInterval = setInterval(() => {
-                timeLeft--;
-                timerDisplay.textContent = timeLeft;
+                timeLeft--; timerDisplay.textContent = timeLeft;
                 if (timeLeft <= 0) endGame();
             }, 1000);
         }
 
         function endGame() {
-            isPlaying = false;
-            clearInterval(timerInterval);
-            wordDisplay.style.display = 'none';
-            japaneseDisplay.textContent = '';
-            
+            isPlaying = false; clearInterval(timerInterval);
+            wordDisplay.style.display = 'none'; japaneseDisplay.textContent = '';
             playTimeUpSound();
 
             const wpm = totalCorrectTypes * 2; 
             const totalKeys = totalCorrectTypes + totalMissTypes;
             const accuracy = totalKeys > 0 ? Math.round((totalCorrectTypes / totalKeys) * 100) : 0;
 
-            messageDisplay.innerHTML = `
-                <strong>【タイムアップ！】</strong><br>
-                1分間のタイピング速度: <strong>${wpm}</strong> 文字/分 (WPM)<br>
-                正解した文字数: ${totalCorrectTypes} 文字<br>
-                ミスした回数: ${totalMissTypes} 回<br>
-                正確さ: ${accuracy} %<br><br>
-            `;
-            
-            startBtn.textContent = 'もう一度遊ぶ';
-            startBtn.style.display = 'inline-block';
+            messageDisplay.innerHTML = `<strong>【タイムアップ！】結果をサーバーに自動保存しました</strong><br>速度: <strong>${wpm}</strong> WPM / 正確さ: ${accuracy} %`;
+            startBtn.textContent = 'もう一度遊ぶ'; startBtn.style.display = 'inline-block';
+
+            // 💡 サーバーへデータを自動で送信する（バックグラウンド通信）
+            sendResultToServer(wpm, totalCorrectTypes, totalMissTypes, accuracy);
+        }
+
+        // 💡 サーバーへPOSTリクエストを送る関数
+        function sendResultToServer(wpm, correct, miss, accuracy) {
+            const now = new Date();
+            const timeStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+            const resultData = { time: timeStr, wpm: wpm, correct: correct, miss: miss, accuracy: accuracy };
+
+            // サーバーの「/save-csv」宛てにデータを送る
+            fetch('/save-csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(resultData)
+            })
+            .then(response => response.json())
+            .then(data => console.log('保存完了:', data))
+            .catch(error => console.error('保存エラー:', error));
         }
 
         function setWord() {
             if (!isPlaying) return;
-            
-            // 読み込んだ問題データからランダムに1つ選ぶ
             currentQuestion = words[Math.floor(Math.random() * words.length)];
-            
-            japaneseDisplay.textContent = currentQuestion.japanese; // 画面に日本語を出す
-            currentWord = currentQuestion.english;                 // 入力する英字をセット
-            charIndex = 0;
-            
+            japaneseDisplay.textContent = currentQuestion.japanese; currentWord = currentQuestion.english; charIndex = 0;
             updateDisplay();
         }
 
         function updateDisplay() {
             let html = '';
             for (let i = 0; i < currentWord.length; i++) {
-                if (i < charIndex) {
-                    html += `<span class="correct">${currentWord[i]}</span>`;
-                } else {
-                    html += `<span>${currentWord[i]}</span>`;
-                }
+                html += (i < charIndex) ? `<span class="correct">${currentWord[i]}</span>` : `<span>${currentWord[i]}</span>`;
             }
             wordDisplay.innerHTML = html;
         }
 
         window.addEventListener('keydown', (e) => {
             if (!isPlaying || e.key.length > 1) return;
-
             if (e.key === currentWord[charIndex]) {
-                charIndex++; 
-                totalCorrectTypes++;
-                
-                playTypeSound();
-                updateDisplay();
-
-                if (charIndex === currentWord.length) {
-                    playClearSound();
-                    setWord(); // 次の問題へ
-                }
+                charIndex++; totalCorrectTypes++; playTypeSound(); updateDisplay();
+                if (charIndex === currentWord.length) { playClearSound(); setWord(); }
             } else {
-                totalMissTypes++;
-                playMissSound();
-
-                gameBody.classList.add('miss-flash');
-                setTimeout(() => { gameBody.classList.remove('miss-flash'); }, 100);
+                totalMissTypes++; playMissSound();
+                gameBody.classList.add('miss-flash'); setTimeout(() => { gameBody.classList.remove('miss-flash'); }, 100);
             }
         });
     </script>
