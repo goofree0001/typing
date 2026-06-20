@@ -31,7 +31,8 @@
     </div>
 
     <div id="status-container">
-        <span>残り時間: <span id="timer">30</span> 秒</span>
+        <!-- 💡 初期表示を 60 秒に書き換えました -->
+        <span>残り時間: <span id="timer">60</span> 秒</span>
     </div>
 
     <button id="start-btn">ゲームを始める</button>
@@ -50,9 +51,12 @@
     <script>
         let words = []; 
         let currentQuestion = null; let currentWord = ''; let charIndex = 0; let isPlaying = false;
-        let totalCorrectTypes = 0; let totalMissTypes = 0; let timeLeft = 30; let timerInterval = null;
+        let totalCorrectTypes = 0; let totalMissTypes = 0; timerInterval = null;
         let myChart = null; 
         let currentWordIndex = 0; 
+
+        // 💡 制限時間を 60 秒に変更しました
+        let timeLeft = 60; 
 
         const fileInput = document.getElementById('file-input'); const fileArea = document.getElementById('file-area');
         const startBtn = document.getElementById('start-btn'); const statusContainer = document.getElementById('status-container');
@@ -80,10 +84,7 @@
         function playTimeUpSound() { playTone(523.25, 'sine', 0.1); setTimeout(() => playTone(659.25, 'sine', 0.1), 100); setTimeout(() => playTone(783.99, 'sine', 0.1), 200); setTimeout(() => playTone(1046.50, 'sine', 0.3), 300); }
 
         fileInput.addEventListener('change', (e) => {
-            // 💡 【重要修正】ファイルが1つも選択されていない場合は、何もせず安全に終了する
             if (!e.target.files || e.target.files.length === 0) return;
-            
-            // 💡 【重要修正】末尾に [0] をつけて、1番目のファイルオブジェクトだけを確実に取り出す
             const file = e.target.files[0]; 
             
             const reader = new FileReader();
@@ -100,11 +101,13 @@
                     reloadBtn.style.display = 'none'; 
                 }
             };
-            reader.readAsText(file); // 💡 これでエラーが出なくなります
+            reader.readAsText(file);
         });
 
         startBtn.addEventListener('click', () => {
-            isPlaying = true; timeLeft = 30; totalCorrectTypes = 0; totalMissTypes = 0;
+            isPlaying = true; 
+            timeLeft = 60; // 💡 スタート時も 60 秒にリセットします
+            totalCorrectTypes = 0; totalMissTypes = 0;
             currentWordIndex = 0; 
             startBtn.style.display = 'none'; reloadBtn.style.display = 'none'; 
             statusContainer.style.display = 'block'; wordDisplay.style.display = 'block';
@@ -124,7 +127,9 @@
             wordDisplay.style.display = 'none'; japaneseDisplay.textContent = '';
             playTimeUpSound();
 
-            const wpm = totalCorrectTypes * 2; 
+            // 💡 【重要修正】60秒間（1分間）のゲームになったため、2倍せず正解数がそのまま WPM になります
+            const wpm = totalCorrectTypes; 
+            
             const totalKeys = totalCorrectTypes + totalMissTypes;
             const accuracy = totalKeys > 0 ? Math.round((totalCorrectTypes / totalKeys) * 100) : 0;
 
